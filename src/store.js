@@ -134,4 +134,13 @@ export class MemoryStore {
       WHERE id = ?
     `).run(id);
   }
+
+  consolidate(oldIdsArray, newContent, { source, tags } = {}) {
+    const db = this.memoryDb.getDb();
+    const transaction = db.transaction(() => {
+      oldIdsArray.forEach(id => this.delete(id));
+      return this.add(newContent, { source, tags, tier: 'hot' });
+    });
+    return transaction();
+  }
 }

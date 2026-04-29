@@ -10,6 +10,10 @@ export class MemoryDB {
   init() {
     this.db = new Database(this.dbPath);
     
+    // 强制开启 WAL 模式 (Write-Ahead Logging) 和 NORMAL synchronous
+    this.db.pragma('journal_mode = WAL');
+    this.db.pragma('synchronous = NORMAL');
+    
     // Create core tables
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS memories (
@@ -30,7 +34,8 @@ export class MemoryDB {
         tags,
         content='memories',
         content_rowid='id',
-        tokenize='unicode61'
+        tokenize='trigram',
+        detail='none'
       );
 
       CREATE TRIGGER IF NOT EXISTS memories_ai AFTER INSERT ON memories BEGIN
@@ -43,7 +48,7 @@ export class MemoryDB {
         VALUES ('delete', old.id, old.content, old.source, old.tags);
       END;
 
-      CREATE TRIGGER IF NOT EXISTS memories_au AFTER UPDATE ON memories BEGIN
+      CREATE TRIGGER IF NOT EXISTS memories_au AFTER UPDATE OF content, source, tags ON memories BEGIN
         INSERT INTO memories_fts(memories_fts, rowid, content, source, tags)
         VALUES ('delete', old.id, old.content, old.source, old.tags);
         INSERT INTO memories_fts(rowid, content, source, tags)
@@ -58,6 +63,65 @@ export class MemoryDB {
       CREATE INDEX IF NOT EXISTS idx_memories_tier ON memories(tier);
       CREATE INDEX IF NOT EXISTS idx_memories_source ON memories(source);
       CREATE INDEX IF NOT EXISTS idx_memories_created ON memories(created_at);
+
+      -- CBR table for experience logs
+      CREATE TABLE IF NOT EXISTS cbr_cases (
+        id TEXT PRIMARY KEY,
+        problem TEXT NOT NULL,
+        solution TEXT NOT NULL,
+        outcome TEXT NOT NULL,
+        successes INTEGER DEFAULT 0,
+        retrievals INTEGER DEFAULT 0,
+        utility_score REAL DEFAULT 0.0,
+        created_at DATETIME DEFAULT (datetime('now'))
+      );
+
+      CREATE VIRTUAL TABLE IF NOT EXISTS cbr_cases_fts USING fts5(
+        problem,
+        solution,
+        outcome,
+        content='cbr_cases',
+        content_rowid='rowid',
+        tokenize='trigram',
+        detail='none'
+      );
+
+      CREATE TRIGGER IF NOT EXISTS cbr_cases_ai AFTER INSERT ON cbr_cases BEGIN
+        INSERT INTO cbr_cases_fts(rowid, problem, solution, outcome)
+        VALUES (new.rowid, new.problem, new.solution, new.outcome);
+      END;
+
+      CREATE TRIGGER IF NOT EXISTS cbr_cases_ad AFTER DELETE ON cbr_cases BEGIN
+        INSERT INTO cbr_cases_fts(cbr_cases_fts, rowid, problem, solution, outcome)
+        VALUES ('delete', old.rowid, old.problem, old.solution, old.outcome);
+      END;
+
+      CREATE TRIGGER IF NOT EXISTS cbr_cases_au AFTER UPDATE OF problem, solution, outcome ON cbr_cases BEGIN
+        INSERT INTO cbr_cases_fts(cbr_cases_fts, rowid, problem, solution, outcome)
+        VALUES ('delete', old.rowid, old.problem, old.solution, old.outcome);
+        INSERT INTO cbr_cases_fts(rowid, problem, solution, outcome)
+        VALUES (new.rowid, new.problem, new.solution, new.outcome);
+      END;
+
+      -- DAG audit logs
+      CREATE TABLE IF NOT EXISTS cycle_logs (
+        cycle_id TEXT PRIMARY KEY,
+        trigger_source TEXT NOT NULL, 
+        tokens_in INTEGER DEFAULT 0,
+        tokens_out INTEGER DEFAULT 0,
+        tools_called TEXT DEFAULT '[]',
+        safety_decision TEXT,
+        elapsed_ms INTEGER,
+        created_at DATETIME DEFAULT (datetime('now'))
+      );
+
+      CREATE TRIGGER IF NOT EXISTS prevent_cycle_logs_update BEFORE UPDATE ON cycle_logs BEGIN
+        SELECT RAISE(ABORT, 'cycle_logs is append-only');
+      END;
+
+      CREATE TRIGGER IF NOT EXISTS prevent_cycle_logs_delete BEFORE DELETE ON cycle_logs BEGIN
+        SELECT RAISE(ABORT, 'cycle_logs is append-only');
+      END;
     `);
   }
 

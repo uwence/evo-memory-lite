@@ -1,37 +1,70 @@
-export function chunkMarkdown(text, { maxChunkSize = 500, overlap = 80 } = {}) {
+export function chunkMarkdown(text, { maxChunkSize = 500 } = {}) {
   if (!text) return [];
 
   const chunks = [];
   let currentChunk = '';
+  let codeFenceLock = false;
+  let currentHeaderPath = [];
   
-  // Basic heuristic: split by lines, try to respect headers and empty lines
   const lines = text.split('\n');
+
+  const pushChunk = () => {
+    if (currentChunk.trim().length > 0) {
+      chunks.push(currentChunk.trim());
+      // On new chunk, inject header path if available
+      currentChunk = currentHeaderPath.length > 0 ? `[继承自上文结构]: ${currentHeaderPath.join(' > ')}\n` : '';
+    }
+  };
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
+
+    // Toggle code fence lock
+    if (line.trim().startsWith('```')) {
+      codeFenceLock = !codeFenceLock;
+    }
+
+    // Update header path
+    const headerMatch = line.match(/^(#{1,6})\s+(.*)/);
+    if (headerMatch && !codeFenceLock) {
+      const level = headerMatch[1].length;
+      const title = headerMatch[2];
+      // Keep only paths less than current level
+      currentHeaderPath = currentHeaderPath.slice(0, level - 1);
+      currentHeaderPath[level - 1] = title;
+      // remove undefined holes
+      currentHeaderPath = currentHeaderPath.filter(Boolean);
+    }
+
+    // Check boundary
+    const isTable = line.trim().startsWith('|') && line.trim().endsWith('|');
+    const isLargeEnough = currentChunk.length >= maxChunkSize;
     
-    // If adding this line exceeds maxChunkSize and we have content, push it
-    if (currentChunk.length + line.length > maxChunkSize && currentChunk.length > 0) {
-      chunks.push(currentChunk.trim());
-      
-      // Calculate overlap
-      if (overlap > 0 && currentChunk.length >= overlap) {
-        currentChunk = currentChunk.slice(-overlap) + '\n' + line + '\n';
-      } else {
-        currentChunk = line + '\n';
+    // We only split if we exceed maxChunkSize, and we are NOT in a code fence, NOT currently inside a contiguous table block
+    if (isLargeEnough && !codeFenceLock && !isTable && currentChunk.length > 0) {
+      // If the current line is a header, definitely split here instead of adding it
+      if (headerMatch) {
+         pushChunk();
+         currentChunk += line + '\n';
+         continue;
       }
-    } else {
-      // Prioritize split at headers if the chunk is getting somewhat large
-      if (line.match(/^#{1,6}\s/) && currentChunk.length > maxChunkSize / 2) {
-        chunks.push(currentChunk.trim());
-        currentChunk = line + '\n';
-      } else {
-        currentChunk += line + '\n';
+      // If it's a blank line, it's a great place to split
+      if (line.trim() === '') {
+         pushChunk();
+         continue; // skip the blank line at the start of next chunk
+      }
+      
+      // If it's forced by size, just split
+      if (currentChunk.length > maxChunkSize * 1.5) {
+         pushChunk();
       }
     }
+
+    currentChunk += line + '\n';
   }
 
-  if (currentChunk.trim().length > 0) {
+  // Push remaining
+  if (currentChunk.replace(/^\[继承自上文结构\]:.*$/, '').trim().length > 0) {
     chunks.push(currentChunk.trim());
   }
 
