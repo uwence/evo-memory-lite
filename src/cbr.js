@@ -5,12 +5,12 @@ export class MemoryCBR {
     this.memoryDb = db;
   }
 
-  addCase(id, problem, solution, outcome) {
+  addCase(id, problem, solution, outcome, { namespace = 'global' } = {}) {
     const db = this.memoryDb.getDb();
     const info = db.prepare(`
-      INSERT INTO cbr_cases (id, problem, solution, outcome)
-      VALUES (?, ?, ?, ?)
-    `).run(id, problem, solution, outcome);
+      INSERT INTO cbr_cases (id, namespace, problem, solution, outcome)
+      VALUES (?, ?, ?, ?, ?)
+    `).run(id, namespace, problem, solution, outcome);
     return id;
   }
 
@@ -38,7 +38,7 @@ export class MemoryCBR {
     `).run(id);
   }
 
-  search(query, { limit = 5, decayLambda = 0.1 } = {}) {
+  search(query, { namespaces = ['global'], limit = 5, decayLambda = 0.1 } = {}) {
     if (!query) return [];
     
     let ftsQuery = generateTrigramQuery(query);
@@ -47,18 +47,21 @@ export class MemoryCBR {
     // Final Score = (BM25 Normalized * 0.4) + (Time Decay * 0.2) + (Utility Score * 0.4)
     // We compute BM25 rank in SQLite, combined with exponential decay if needed, or we compute the final score in JS.
     // Let's bring all fields to JS to calculate final score accurately, since FTS bm25 is negative.
+    
+    const nsPlaceholders = namespaces.map(() => '?').join(',');
     const sql = `
-      SELECT c.id, c.problem, c.solution, c.outcome, c.successes, c.retrievals, c.utility_score, c.created_at,
+      SELECT c.id, c.namespace, c.problem, c.solution, c.outcome, c.successes, c.retrievals, c.utility_score, c.created_at,
              bm25(cbr_cases_fts) AS bm25_rank,
              (julianday('now') - julianday(c.created_at)) AS days_old
         FROM cbr_cases_fts f
         JOIN cbr_cases c ON f.rowid = c.rowid
        WHERE cbr_cases_fts MATCH ?
+         AND c.namespace IN (${nsPlaceholders})
        ORDER BY bm25_rank ASC
        LIMIT ?
     `;
 
-    const rows = db.prepare(sql).all(ftsQuery, limit * 2);
+    const rows = db.prepare(sql).all(ftsQuery, ...namespaces, limit * 2);
 
     const scored = rows.map(r => {
        const bm25Score = bm25RankToScore(r.bm25_rank);

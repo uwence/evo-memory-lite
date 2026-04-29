@@ -3,13 +3,14 @@ export class MemoryAudit {
     this.memoryDb = db;
   }
 
-  logCycle({ cycleId, triggerSource, tokensIn, tokensOut, toolsCalled = [], safetyDecision, elapsedMs }) {
+  logCycle({ cycleId, namespace = 'global', triggerSource, tokensIn, tokensOut, toolsCalled = [], safetyDecision, elapsedMs }) {
     const db = this.memoryDb.getDb();
     db.prepare(`
-      INSERT INTO cycle_logs (cycle_id, trigger_source, tokens_in, tokens_out, tools_called, safety_decision, elapsed_ms)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO cycle_logs (cycle_id, namespace, trigger_source, tokens_in, tokens_out, tools_called, safety_decision, elapsed_ms)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       cycleId,
+      namespace,
       triggerSource,
       tokensIn,
       tokensOut,
@@ -20,8 +21,10 @@ export class MemoryAudit {
     return cycleId;
   }
 
-  getLogs({ limit = 50, offset = 0 } = {}) {
+  getLogs({ namespaces = ['global'], limit = 50, offset = 0 } = {}) {
     const db = this.memoryDb.getDb();
-    return db.prepare('SELECT * FROM cycle_logs ORDER BY created_at DESC LIMIT ? OFFSET ?').all(limit, offset);
+    if (!namespaces || namespaces.length === 0) return [];
+    const placeholders = namespaces.map(() => '?').join(',');
+    return db.prepare(`SELECT * FROM cycle_logs WHERE namespace IN (${placeholders}) ORDER BY created_at DESC LIMIT ? OFFSET ?`).all(...namespaces, limit, offset);
   }
 }

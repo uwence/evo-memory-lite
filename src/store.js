@@ -1,9 +1,10 @@
 export class MemoryStore {
-  constructor(db) {
+  constructor(db, emitter) {
     this.memoryDb = db;
+    this.emitter = emitter;
   }
 
-  add(content, { source = '', tags = '', tier = 'hot' } = {}) {
+  add(content, { namespace = 'global', source = '', tags = '', tier = 'hot' } = {}) {
     if (!content) {
       throw new Error('Content cannot be empty');
     }
@@ -14,17 +15,19 @@ export class MemoryStore {
     const db = this.memoryDb.getDb();
 
     // Deduplication check
-    const existing = db.prepare('SELECT id FROM memories WHERE content = ?').get(content);
+    const existing = db.prepare('SELECT id FROM memories WHERE content = ? AND namespace = ?').get(content, namespace);
     if (existing) {
       return this.getById(existing.id);
     }
 
     const info = db.prepare(`
-      INSERT INTO memories (content, source, tags, tier) 
-      VALUES (?, ?, ?, ?)
-    `).run(content, source, tags, tier);
+      INSERT INTO memories (namespace, content, source, tags, tier) 
+      VALUES (?, ?, ?, ?, ?)
+    `).run(namespace, content, source, tags, tier);
 
-    return this.getById(info.lastInsertRowid);
+    const mem = this.getById(info.lastInsertRowid);
+    if (this.emitter) this.emitter.emit('memory_added', mem);
+    return mem;
   }
 
   addBatch(entries) {
@@ -33,19 +36,20 @@ export class MemoryStore {
     let skipped = 0;
 
     const insert = db.prepare(`
-      INSERT INTO memories (content, source, tags, tier) 
-      VALUES (?, ?, ?, ?)
+      INSERT INTO memories (namespace, content, source, tags, tier) 
+      VALUES (?, ?, ?, ?, ?)
     `);
 
-    const check = db.prepare('SELECT id FROM memories WHERE content = ?');
+    const check = db.prepare('SELECT id FROM memories WHERE content = ? AND namespace = ?');
 
     const transaction = db.transaction((items) => {
       for (const item of items) {
         if (!item.content) continue;
-        if (check.get(item.content)) {
+        const ns = item.namespace || 'global';
+        if (check.get(item.content, ns)) {
           skipped++;
         } else {
-          insert.run(item.content, item.source || '', item.tags || '', item.tier || 'hot');
+          insert.run(ns, item.content, item.source || '', item.tags || '', item.tier || 'hot');
           added++;
         }
       }
@@ -79,13 +83,17 @@ export class MemoryStore {
       db.prepare(`UPDATE memories SET ${updates.join(', ')} WHERE id = ?`).run(...values);
     }
     
-    return this.getById(id);
+    const mem = this.getById(id);
+    if (this.emitter) this.emitter.emit('memory_updated', mem);
+    return mem;
   }
 
   delete(id) {
     const db = this.memoryDb.getDb();
     const info = db.prepare('DELETE FROM memories WHERE id = ?').run(id);
-    return info.changes > 0;
+    const success = info.changes > 0;
+    if (success && this.emitter) this.emitter.emit('memory_deleted', { id });
+    return success;
   }
 
   getById(id) {
@@ -93,10 +101,16 @@ export class MemoryStore {
     return db.prepare('SELECT * FROM memories WHERE id = ?').get(id);
   }
 
-  list({ tier, source, tags, limit = 100, offset = 0, orderBy = 'created_at DESC' } = {}) {
+  list({ namespaces = ['global'], tier, source, tags, limit = 100, offset = 0, orderBy = 'created_at DESC' } = {}) {
     const db = this.memoryDb.getDb();
     let query = 'SELECT * FROM memories WHERE 1=1';
     const params = [];
+
+    if (namespaces && namespaces.length > 0) {
+      const placeholders = namespaces.map(() => '?').join(',');
+      query += ` AND namespace IN (${placeholders})`;
+      params.push(...namespaces);
+    }
 
     if (tier) {
       query += ' AND tier = ?';
@@ -135,11 +149,11 @@ export class MemoryStore {
     `).run(id);
   }
 
-  consolidate(oldIdsArray, newContent, { source, tags } = {}) {
+  consolidate(oldIdsArray, newContent, { namespace = 'global', source, tags } = {}) {
     const db = this.memoryDb.getDb();
     const transaction = db.transaction(() => {
       oldIdsArray.forEach(id => this.delete(id));
-      return this.add(newContent, { source, tags, tier: 'hot' });
+      return this.add(newContent, { namespace, source, tags, tier: 'hot' });
     });
     return transaction();
   }

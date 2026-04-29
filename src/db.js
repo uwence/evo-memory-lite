@@ -14,10 +14,16 @@ export class MemoryDB {
     this.db.pragma('journal_mode = WAL');
     this.db.pragma('synchronous = NORMAL');
     
+    // Add alter table for legacy support
+    try { this.db.exec(`ALTER TABLE memories ADD COLUMN namespace TEXT DEFAULT 'global'`); } catch(e){}
+    try { this.db.exec(`ALTER TABLE cbr_cases ADD COLUMN namespace TEXT DEFAULT 'global'`); } catch(e){}
+    try { this.db.exec(`ALTER TABLE cycle_logs ADD COLUMN namespace TEXT DEFAULT 'global'`); } catch(e){}
+
     // Create core tables
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS memories (
         id         INTEGER PRIMARY KEY AUTOINCREMENT,
+        namespace  TEXT DEFAULT 'global',
         content    TEXT NOT NULL,
         source     TEXT DEFAULT '',
         tags       TEXT DEFAULT '',
@@ -67,6 +73,7 @@ export class MemoryDB {
       -- CBR table for experience logs
       CREATE TABLE IF NOT EXISTS cbr_cases (
         id TEXT PRIMARY KEY,
+        namespace TEXT DEFAULT 'global',
         problem TEXT NOT NULL,
         solution TEXT NOT NULL,
         outcome TEXT NOT NULL,
@@ -106,6 +113,7 @@ export class MemoryDB {
       -- DAG audit logs
       CREATE TABLE IF NOT EXISTS cycle_logs (
         cycle_id TEXT PRIMARY KEY,
+        namespace TEXT DEFAULT 'global',
         trigger_source TEXT NOT NULL, 
         tokens_in INTEGER DEFAULT 0,
         tokens_out INTEGER DEFAULT 0,

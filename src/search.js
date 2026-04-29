@@ -31,7 +31,7 @@ export class MemorySearch {
     this.memoryDb = db;
   }
   
-  search(query, { limit = 10, minRank = -9999, tier, source, decayLambda = 0.1 } = {}) {
+  search(query, { namespaces = ['global'], limit = 10, minRank = -9999, tier, source, decayLambda = 0.1 } = {}) {
     if (!query) return [];
     
     // Fallback: If using detail='none' and tokenize='trigram', FTS5 rejects phrases.
@@ -48,6 +48,12 @@ export class MemorySearch {
        WHERE memories_fts MATCH ?
     `;
     const params = [decayLambda, ftsQuery];
+
+    if (namespaces && namespaces.length > 0) {
+      const placeholders = namespaces.map(() => '?').join(',');
+      sql += ` AND m.namespace IN (${placeholders})`;
+      params.push(...namespaces);
+    }
 
     if (tier && tier !== 'archived') {
        sql += ' AND m.tier = ?';
@@ -76,25 +82,25 @@ export class MemorySearch {
     })).filter(r => r.rank >= minRank);
   }
 
-  searchMulti(keywords, { mode = 'AND', limit = 10, tier } = {}) {
+  searchMulti(keywords, { namespaces = ['global'], mode = 'AND', limit = 10, tier } = {}) {
     if (!keywords || keywords.length === 0) return [];
     // Do not wrap in quotes because detail=none does not support phrase queries
     const sanitized = keywords.map(k => `${k.replace(/"/g, '')}`);
     const query = sanitized.join(` ${mode} `);
-    return this.search(query, { limit, tier });
+    return this.search(query, { namespaces, limit, tier });
   }
 
-  searchExpanded(keywordsArray, { limit = 5, decayLambda = 0.1 } = {}) {
+  searchExpanded(keywordsArray, { namespaces = ['global'], limit = 5, decayLambda = 0.1 } = {}) {
     if (!keywordsArray || keywordsArray.length === 0) return [];
     const matchQuery = keywordsArray.map(k => `${k.replace(/"/g, '')}`).join(' OR ');
-    return this.search(matchQuery, { limit, decayLambda });
+    return this.search(matchQuery, { namespaces, limit, decayLambda });
   }
 
-  suggest(prefix, { limit = 5 } = {}) {
+  suggest(prefix, { namespaces = ['global'], limit = 5 } = {}) {
     if (!prefix) return [];
     const safePrefix = prefix.replace(/"/g, '');
     const query = `${safePrefix}*`;
-    return this.search(query, { limit, minRank: -9999 }).map(r => ({
+    return this.search(query, { namespaces, limit, minRank: -9999 }).map(r => ({
       id: r.id,
       snippet: generateSnippet(r.content, safePrefix, 50)
     }));
