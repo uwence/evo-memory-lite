@@ -3,7 +3,23 @@ export class MemoryAudit {
     this.memoryDb = db;
   }
 
-  logCycle({ cycleId, namespace = 'global', triggerSource, tokensIn, tokensOut, toolsCalled = [], safetyDecision, elapsedMs }) {
+  logCycle({
+    cycleId,
+    namespace = 'global',
+    triggerSource,
+    tokensIn = 0,
+    tokensOut = 0,
+    toolsCalled = [],
+    safetyDecision = null,
+    elapsedMs = null
+  }) {
+    if (!cycleId) {
+      throw new Error('cycleId is required');
+    }
+    if (!triggerSource) {
+      throw new Error('triggerSource is required');
+    }
+
     const db = this.memoryDb.getDb();
     db.prepare(`
       INSERT INTO cycle_logs (cycle_id, namespace, trigger_source, tokens_in, tokens_out, tools_called, safety_decision, elapsed_ms)

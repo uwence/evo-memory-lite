@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { createMemoryLite } from '../src/index.js';
 import SAMPLE_MEMORIES from './fixtures/sample.js';
-import fs from 'fs';
+import { cleanupTestDb } from './helpers/db.js';
 
 const TEST_DB = 'test-search.db';
 
@@ -9,14 +9,14 @@ describe('MemorySearch', () => {
   let mem;
 
   beforeEach(() => {
-    if (fs.existsSync(TEST_DB)) fs.unlinkSync(TEST_DB);
+    cleanupTestDb(TEST_DB);
     mem = createMemoryLite(TEST_DB);
     mem.store.addBatch(SAMPLE_MEMORIES);
   });
 
   afterEach(() => {
     mem.close();
-    if (fs.existsSync(TEST_DB)) fs.unlinkSync(TEST_DB);
+    cleanupTestDb(TEST_DB);
   });
 
   it('performs basic BM25 search', () => {
@@ -27,6 +27,28 @@ describe('MemorySearch', () => {
     expect(results[0].rank).toBeGreaterThan(0);
     expect(results[0].rank).toBeLessThanOrEqual(1);
     expect(results[0].snippet).toBeDefined();
+  });
+
+  it('includes namespace in search and suggestion results', () => {
+    const added = mem.store.add('Coder namespace sqlite preference', {
+      namespace: 'agent-coder',
+      source: 'test',
+      tags: 'namespace,sqlite'
+    });
+
+    const results = mem.search.search('sqlite', {
+      namespaces: ['agent-coder']
+    });
+
+    expect(results.length).toBeGreaterThan(0);
+    expect(results[0].id).toBe(added.id);
+    expect(results[0].namespace).toBe('agent-coder');
+
+    const suggestions = mem.search.suggest('sql', {
+      namespaces: ['agent-coder']
+    });
+    expect(suggestions.length).toBeGreaterThan(0);
+    expect(suggestions[0].namespace).toBe('agent-coder');
   });
 
   it('performs multi-keyword search', () => {

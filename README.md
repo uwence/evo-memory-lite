@@ -1,62 +1,121 @@
-# memory-lite
+# evo-memory-lite
 
-> A pure-local, zero-dependency cognitive middleware and memory fabric for autonomous agents.
+Local-first SQLite memory engine for autonomous agents and coding assistants.
 
-`memory-lite` is a high-performance memory engine designed to push SQLite to its physical limits in Node.js environments. It provides isolated namespaces, structured case-based reasoning (CBR), schema-aware normative gating, and deep forensic auditing for AI agents and LLM tool-calling logic.
+`evo-memory-lite` is a small Node.js library and CLI for storing, searching, exporting, and auditing agent memory on a local SQLite database. It is designed for coding agents, personal assistants, and multi-agent workflows that need durable local context without a hosted vector database.
 
-## Core Features (v0.5.0)
+## Current scope
 
-- **Multi-Agent Memory Isolation**: Native namespace support allowing multiple agents (e.g., Coder, Reviewer) to share the same database while selectively isolating or interacting with contextual memory.
-- **Sleep-Mode Consolidation**: Compress fragmented hot memories into dense semantic structures automatically when agents are idle, completely preventing context poisoning limits.
-- **Deep Tool-Call Gating**: Real-time intercept and schema constraints for agent tool outputs (`NormativeGating`), safely halting destructive operations and injecting self-correction prompts.
-- **Async Event Bus**: Pluggable memory event subscriptions (`memory_added`, `memory_consolidated`, `memory_deleted`) using standard Node.js `EventEmitter`.
-- **Compensatory CBR**: Zero-dependency vector-less retrieval leveraging FTS5 Trigrams, combined with rigorous Laplace-smoothed utility scores and Exponential Time Decay logic.
-- **Forensic Auditability**: Complete directed acyclic graph (DAG) cycle traces securely enforced at the SQLite trigger level—`cycle_logs` are strictly append-only.
+Implemented:
+
+- SQLite-backed memory storage with WAL mode.
+- FTS5 trigram search for lightweight local retrieval.
+- Namespace isolation for multi-agent and project-specific memory.
+- Tiering for hot, warm, cold, and archived memories.
+- JSONL and Markdown export.
+- Case-based reasoning records for problem, solution, and outcome reuse.
+- Append-only audit logs for agent cycles.
+- CLI commands for initialization, add, search, list, export, import, delete, stats, and calibration.
+
+Experimental:
+
+- Sleep-mode consolidation of fragmented memories.
+- Rule-based normative gating for structured tool calls.
+- Context curation for token-budgeted prompt assembly.
 
 ## Installation
 
 ```bash
-npm install better-sqlite3 events
+npm install evo-memory-lite
 ```
 
-## Quick Start
+For local development:
 
-```javascript
-import { createMemoryLite } from './src/index.js';
+```bash
+npm install
+npm test
+```
 
-// Initialize engine
+## Library usage
+
+```js
+import { createMemoryLite } from 'evo-memory-lite';
+
 const mem = createMemoryLite('agent-memory.db');
 
-// 1. Add context targeting a specific agent
-mem.store.add('The user prefers functional programming paradigms.', { 
-  namespace: 'agent-coder', 
-  tags: 'preference' 
+mem.store.add('The user prefers small, explicit pull requests.', {
+  namespace: 'agent-coder',
+  source: 'chat',
+  tags: 'preference,workflow'
 });
 
-// 2. Perform a time-decayed semantic query across specified namespaces
-const results = mem.search.search('functional programming', { 
+const results = mem.search.search('pull requests', {
   namespaces: ['global', 'agent-coder'],
-  limit: 5,
-  decayLambda: 0.1
+  limit: 5
 });
 
-// 3. React to background memory consolidations
-mem.events.on('memory_consolidated', (event) => {
-  console.log(`Agent ${event.namespace} learned a new core concept!`, event.content);
-});
-
-// 4. Force consolidation of related fragmented thoughts
-mem.consolidator.commitConsolidation(
-  [1, 2, 3], // Fragment IDs
-  'User is building an immutable event-sourcing app in React.', 
-  { namespace: 'agent-coder' }
-);
+console.log(results);
+mem.close();
 ```
 
-## Architecture
+## CLI usage
 
-`memory-lite` does not wrap LLMs or orchestration processes. It functions exclusively as a robust data and state bus that is 100% replayable. It runs completely locally with `better-sqlite3` providing WAL mode concurrency and extreme performance.
+Initialize a database:
+
+```bash
+memory-lite --db agent-memory.db init
+```
+
+Add memory to a namespace:
+
+```bash
+memory-lite --db agent-memory.db add "Prefer small pull requests" --namespace agent-coder --source chat --tags preference
+```
+
+Search across one or more namespaces:
+
+```bash
+memory-lite --db agent-memory.db search "pull requests" --namespace global --namespace agent-coder
+```
+
+Export selected namespaces:
+
+```bash
+memory-lite --db agent-memory.db export --namespace agent-coder --format jsonl --output coder-memory.jsonl
+```
+
+## Recommended namespace model
+
+Use namespaces to keep memory isolated while still allowing selected shared context:
+
+```text
+global
+project:<repo-name>
+agent:<agent-name>
+session:<session-id>
+worktree:<branch-name>
+```
+
+Examples:
+
+```text
+global
+project:learningenglish
+agent:coder
+agent:reviewer
+worktree:feature-memory-mcp
+```
+
+## Development direction
+
+The preferred roadmap is:
+
+1. Stabilize the core library API and schema migrations.
+2. Harden CLI support for namespace-first workflows.
+3. Add an MCP server so Claude Code, Codex-style tools, OpenCode, and other agents can use the memory engine directly.
+4. Add coding-agent specific memory types such as project profile, decision log, bug case, code style, and review finding.
+5. Build a local dashboard only after the core and MCP layers are stable.
 
 ## License
 
-MIT License
+MIT
