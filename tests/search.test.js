@@ -36,7 +36,7 @@ describe('MemorySearch', () => {
       tags: 'namespace,sqlite'
     });
 
-    const results = mem.search.search('namespace sqlite', {
+    const results = mem.search.search('sqlite', {
       namespaces: ['agent-coder']
     });
 
