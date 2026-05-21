@@ -5,11 +5,15 @@ export class MemoryExport {
     this.memoryDb = db;
   }
 
-  toJSONL({ tier, source, tags } = {}) {
-    const db = this.memoryDb.getDb();
-    let query = 'SELECT content, source, tags, tier, created_at FROM memories WHERE 1=1';
+  buildMemoryQuery({ namespaces, tier, source, tags } = {}) {
+    let query = 'SELECT id, namespace, content, source, tags, tier, created_at, updated_at FROM memories WHERE 1=1';
     const params = [];
 
+    if (namespaces && namespaces.length > 0) {
+      const placeholders = namespaces.map(() => '?').join(',');
+      query += ` AND namespace IN (${placeholders})`;
+      params.push(...namespaces);
+    }
     if (tier) {
       query += ' AND tier = ?';
       params.push(tier);
@@ -23,33 +27,25 @@ export class MemoryExport {
       params.push(`%${tags}%`);
     }
 
+    query += ' ORDER BY created_at ASC, id ASC';
+    return { query, params };
+  }
+
+  toJSONL({ namespaces, tier, source, tags } = {}) {
+    const db = this.memoryDb.getDb();
+    const { query, params } = this.buildMemoryQuery({ namespaces, tier, source, tags });
     const rows = db.prepare(query).all(...params);
     return rows.map(r => JSON.stringify(r)).join('\n');
   }
 
-  toMarkdown({ tier, source, tags } = {}) {
+  toMarkdown({ namespaces, tier, source, tags } = {}) {
     const db = this.memoryDb.getDb();
-    let query = 'SELECT content, source, tags, tier, created_at FROM memories WHERE 1=1';
-    const params = [];
-
-    if (tier) {
-      query += ' AND tier = ?';
-      params.push(tier);
-    }
-    if (source) {
-      query += ' AND source = ?';
-      params.push(source);
-    }
-    if (tags) {
-      query += ' AND tags LIKE ?';
-      params.push(`%${tags}%`);
-    }
-
+    const { query, params } = this.buildMemoryQuery({ namespaces, tier, source, tags });
     const rows = db.prepare(query).all(...params);
     let md = '# Memory Export\n\n';
     
     rows.forEach(r => {
-      md += `## Source: ${r.source || 'N/A'} | Tags: ${r.tags || 'None'} | Tier: ${r.tier}\n`;
+      md += `## Namespace: ${r.namespace || 'global'} | Source: ${r.source || 'N/A'} | Tags: ${r.tags || 'None'} | Tier: ${r.tier}\n`;
       md += `*Created: ${r.created_at}*\n\n`;
       md += `${r.content}\n\n`;
       md += `---\n\n`;
