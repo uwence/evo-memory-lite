@@ -1,23 +1,51 @@
 {
-  "name": "react-example",
-  "private": true,
-  "version": "0.0.0",
+  "name": "evo-memory-lite",
+  "version": "0.5.1",
+  "description": "Local-first SQLite memory engine for autonomous agents and coding assistants.",
   "type": "module",
+  "main": "./src/index.js",
+  "exports": {
+    ".": "./src/index.js",
+    "./cli": "./src/cli.js"
+  },
   "bin": {
     "memory-lite": "./bin/memory-lite.js"
   },
+  "files": [
+    "bin",
+    "src",
+    "README.md",
+    "LICENSE"
+  ],
   "scripts": {
     "test": "vitest run",
     "dev": "vite --port=3000 --host=0.0.0.0",
     "build": "vite build",
     "preview": "vite preview",
-    "clean": "rm -rf dist",
+    "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\"",
     "lint": "tsc --noEmit"
+  },
+  "keywords": [
+    "agent-memory",
+    "sqlite",
+    "fts5",
+    "cbr",
+    "local-first",
+    "ai-agents"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/uwence/evo-memory-lite.git"
+  },
+  "license": "MIT",
+  "private": false,
+  "engines": {
+    "node": ">=20"
   },
   "dependencies": {
     "@google/genai": "^1.50.1",
     "@tailwindcss/vite": "^4.2.4",
-    "@vitejs/plugin-react": "^5.0.4",
+    "@vitejs/plugin-react": "^6.0.1",
     "better-sqlite3": "^12.9.0",
     "commander": "^14.0.3",
     "dotenv": "^17.4.2",
@@ -26,7 +54,7 @@
     "motion": "^12.38.0",
     "react": "^19.2.5",
     "react-dom": "^19.2.5",
-    "vite": "^6.2.3"
+    "vite": "^8.0.10"
   },
   "devDependencies": {
     "@types/express": "^5.0.6",
@@ -35,7 +63,7 @@
     "tailwindcss": "^4.2.4",
     "tsx": "^4.21.0",
     "typescript": "~6.0.3",
-    "vite": "^6.2.3",
-    "vitest": "^2.1.0"
+    "vite": "^8.0.10",
+    "vitest": "^4.1.5"
   }
 }
