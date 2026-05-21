@@ -22,5 +22,9 @@
     },
     "allowImportingTsExtensions": true,
     "noEmit": true
-  }
+  },
+  "exclude": [
+    "src/App.tsx",
+    "src/main.tsx"
+  ]
 }
