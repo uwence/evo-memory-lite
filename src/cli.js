@@ -1,7 +1,12 @@
 import { Command } from 'commander';
 import { createMemoryLite } from './index.js';
 import fs from 'fs';
-import path from 'path';
+
+const VERSION = '0.5.1';
+
+function collectNamespace(value, previous = []) {
+  return previous.concat([value]);
+}
 
 export function runCLI(argv) {
   const program = new Command();
@@ -9,12 +14,12 @@ export function runCLI(argv) {
   program
     .name('memory-lite')
     .description('Lightweight local memory management tool')
-    .version('0.1.0')
+    .version(VERSION)
     .option('-d, --db <path>', 'Path to SQLite database', 'memory-lite.db');
 
   program.command('init')
     .description('Initialize the database')
-    .action((options) => {
+    .action(() => {
       const dbPath = program.opts().db;
       const mem = createMemoryLite(dbPath);
       console.log(`Database initialized at ${dbPath}`);
@@ -23,13 +28,18 @@ export function runCLI(argv) {
 
   program.command('add <content>')
     .description('Add a new memory')
+    .option('-n, --namespace <namespace>', 'Memory namespace', 'global')
     .option('-s, --source <source>', 'Source tag', '')
     .option('-t, --tags <tags>', 'Comma-separated tags', '')
     .action((content, options) => {
       const mem = createMemoryLite(program.opts().db);
       try {
-        const result = mem.store.add(content, { source: options.source, tags: options.tags });
-        console.log(`Added memory [ID: ${result.id}]`);
+        const result = mem.store.add(content, {
+          namespace: options.namespace,
+          source: options.source,
+          tags: options.tags
+        });
+        console.log(`Added memory [ID: ${result.id}] [Namespace: ${result.namespace}]`);
       } catch (err) {
         console.error(`Error: ${err.message}`);
       } finally {
@@ -39,22 +49,23 @@ export function runCLI(argv) {
 
   program.command('search <query>')
     .description('Search memories')
+    .option('-n, --namespace <namespace>', 'Namespace to search; can be repeated', collectNamespace, ['global'])
     .option('-l, --limit <limit>', 'Max results', 10)
     .option('-t, --tier <tier>', 'Filter by tier')
     .option('-s, --source <source>', 'Filter by source')
     .action((query, options) => {
       const mem = createMemoryLite(program.opts().db);
       const results = mem.search.search(query, {
+        namespaces: options.namespace,
         limit: parseInt(options.limit, 10),
         tier: options.tier,
         source: options.source
       });
       console.log(`Found ${results.length} results for "${query}":\n`);
       results.forEach(r => {
-        console.log(`[ID: ${r.id}] (Rank: ${r.rank.toFixed(3)}) [${r.tier}] ${r.tags ? '{'+r.tags+'}' : ''}`);
+        console.log(`[ID: ${r.id}] [Namespace: ${r.namespace || 'global'}] (Rank: ${r.rank.toFixed(3)}) [${r.tier}] ${r.tags ? '{'+r.tags+'}' : ''}`);
         console.log(r.snippet);
         console.log('---');
-        // Update access count
         mem.store.touch(r.id);
       });
       mem.close();
@@ -62,19 +73,21 @@ export function runCLI(argv) {
 
   program.command('list')
     .description('List memories')
+    .option('-n, --namespace <namespace>', 'Namespace to list; can be repeated', collectNamespace, ['global'])
     .option('-t, --tier <tier>', 'Filter by tier')
     .option('-s, --source <source>', 'Filter by source')
     .option('-l, --limit <limit>', 'Max results', 20)
     .action((options) => {
       const mem = createMemoryLite(program.opts().db);
       const results = mem.store.list({
+        namespaces: options.namespace,
         tier: options.tier,
         source: options.source,
         limit: parseInt(options.limit, 10)
       });
       console.log(`Listing ${results.length} memories:\n`);
       results.forEach(r => {
-        console.log(`[ID: ${r.id}] [${r.tier}] [${r.source}] ${r.tags}`);
+        console.log(`[ID: ${r.id}] [Namespace: ${r.namespace || 'global'}] [${r.tier}] [${r.source}] ${r.tags}`);
         console.log(r.content.substring(0, 100).replace(/\n/g, ' '));
         console.log('---');
       });
@@ -101,6 +114,7 @@ export function runCLI(argv) {
 
   program.command('export')
     .description('Export memories')
+    .option('-n, --namespace <namespace>', 'Namespace to export; can be repeated', collectNamespace, undefined)
     .option('-f, --format <format>', 'Export format (jsonl or markdown)', 'jsonl')
     .option('-o, --output <path>', 'Output file path', 'export.jsonl')
     .option('-t, --tier <tier>', 'Filter by tier')
@@ -108,11 +122,16 @@ export function runCLI(argv) {
     .action((options) => {
       const mem = createMemoryLite(program.opts().db);
       let output = '';
+      const exportOptions = {
+        namespaces: options.namespace,
+        tier: options.tier,
+        source: options.source
+      };
       if (options.format === 'markdown') {
-        output = mem.export.toMarkdown({ tier: options.tier, source: options.source });
-        if (options.output === 'export.jsonl') options.output = 'export.md'; // Default adjustment
+        output = mem.export.toMarkdown(exportOptions);
+        if (options.output === 'export.jsonl') options.output = 'export.md';
       } else {
-        output = mem.export.toJSONL({ tier: options.tier, source: options.source });
+        output = mem.export.toJSONL(exportOptions);
       }
       fs.writeFileSync(options.output, output, 'utf-8');
       console.log(`Exported to ${options.output}`);
